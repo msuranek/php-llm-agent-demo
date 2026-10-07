@@ -1,0 +1,6 @@
+/.DS_Store
+/.idea/
+/.env
+/vendor/
+/data/runtime/*.json
+!/data/runtime/.gitkeep

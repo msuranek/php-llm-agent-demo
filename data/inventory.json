@@ -1,0 +1,23 @@
+[
+  {
+    "sku": "USB-HUB-01",
+    "name": "USB-C Hub 7-in-1",
+    "current_stock": 8,
+    "average_daily_sales": 3,
+    "supplier": "TechSupply Europe"
+  },
+  {
+    "sku": "MOUSE-WL-02",
+    "name": "Wireless Mouse",
+    "current_stock": 42,
+    "average_daily_sales": 2.5,
+    "supplier": "Office Devices Ltd."
+  },
+  {
+    "sku": "KEYBOARD-M-03",
+    "name": "Mechanical Keyboard",
+    "current_stock": 5,
+    "average_daily_sales": 1.2,
+    "supplier": "InputWorks"
+  }
+]

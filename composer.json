@@ -1,0 +1,19 @@
+{
+  "name": "suranek/php-llm-agent-demo",
+  "description": "Framework-free PHP demo of a controlled LLM agent integrating tool calling with application services.",
+  "license": "MIT",
+  "type": "project",
+  "require": {
+    "php": ">=8.0",
+    "ext-curl": "*",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Demo\\": "src/"
+    }
+  },
+  "scripts": {
+    "test": "php tests/run.php"
+  }
+}

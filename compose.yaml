@@ -1,0 +1,15 @@
+services:
+  agent:
+    build:
+      context: .
+    image: php-llm-agent-demo:local
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-terra}
+    volumes:
+      - ./data/runtime:/app/data/runtime
+    entrypoint: ["php", "bin/agent"]
+
+  test:
+    image: php-llm-agent-demo:local
+    entrypoint: ["php", "tests/run.php"]

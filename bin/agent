@@ -1,0 +1,72 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Demo\Agent\Agent;
+use Demo\Inventory\InventoryRepository;
+use Demo\Inventory\RestockCalculator;
+use Demo\Inventory\RestockPolicyRepository;
+use Demo\OpenAI\ResponsesClient;
+use Demo\Tools\CalculateRestockTool;
+use Demo\Tools\CreatePurchaseDraftTool;
+use Demo\Tools\FindProductTool;
+use Demo\Tools\GetRestockPolicyTool;
+use Demo\Tools\ToolRegistry;
+
+require dirname(__DIR__) . '/src/bootstrap.php';
+
+$root = dirname(__DIR__);
+loadEnvFile($root . '/.env');
+
+$arguments = array_slice($argv, 1);
+$allowWrite = in_array('--allow-write', $arguments, true);
+$showTrace = in_array('--trace', $arguments, true);
+$model = getenv('OPENAI_MODEL') ?: 'gpt-5.6-terra';
+$goalParts = [];
+
+foreach ($arguments as $argument) {
+    if ($argument === '--allow-write' || $argument === '--trace') {
+        continue;
+    }
+    if (str_starts_with($argument, '--model=')) {
+        $model = substr($argument, strlen('--model='));
+        continue;
+    }
+    $goalParts[] = $argument;
+}
+
+$goal = trim(implode(' ', $goalParts));
+if ($goal === '') {
+    fwrite(STDERR, "Usage: php bin/agent [--trace] [--allow-write] [--model=MODEL] \"your goal\"\n");
+    exit(2);
+}
+
+try {
+    $products = new InventoryRepository($root . '/data/inventory.json');
+    $policies = new RestockPolicyRepository($root . '/data/restock-policies.json');
+    $calculator = new RestockCalculator();
+
+    $registry = new ToolRegistry([
+        new FindProductTool($products),
+        new GetRestockPolicyTool($policies),
+        new CalculateRestockTool($calculator),
+        new CreatePurchaseDraftTool($products, $policies, $calculator, $root . '/data/runtime'),
+    ], $allowWrite);
+
+    $agent = new Agent(
+        new ResponsesClient((string) getenv('OPENAI_API_KEY')),
+        $registry,
+        $model,
+    );
+    $result = $agent->run($goal);
+
+    echo $result->answer . PHP_EOL;
+    if ($showTrace) {
+        echo "\n--- Agent trace ({$result->rounds} rounds) ---\n";
+        echo json_encode($result->trace, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+    }
+} catch (Throwable $exception) {
+    fwrite(STDERR, 'Error: ' . $exception->getMessage() . PHP_EOL);
+    exit(1);
+}

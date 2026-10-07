@@ -1,0 +1,12 @@
+{
+  "default": {
+    "lead_time_days": 5,
+    "safety_stock": 10
+  },
+  "overrides": {
+    "KEYBOARD-M-03": {
+      "lead_time_days": 10,
+      "safety_stock": 8
+    }
+  }
+}
