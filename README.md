@@ -1,5 +1,7 @@
 # PHP LLM Agent Demo
 
+[![CI](https://github.com/msuranek/php-llm-agent-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/msuranek/php-llm-agent-demo/actions/workflows/ci.yml)
+
 Samostatná ukázka řízeného LLM agenta v PHP bez aplikačního frameworku. Ukazuje, jak nad databází, API nebo aplikačními službami postavit vrstvu, která dostane cíl, zvolí vhodné nástroje a sestaví z nich vícekrokový pracovní postup.
 
 Demo řeší konkrétní provozní problém: **kontrolu skladové zásoby a přípravu návrhu objednávky**. Stejný princip lze zapojit do e-shopu, ERP, CRM, skladového systému nebo interní administrace.
@@ -19,16 +21,18 @@ Agent následně:
 5. před zápisem znovu ověří SKU a přepočítá množství v PHP,
 6. vytvoří návrh objednávky, pokud to uživatel výslovně požadoval, doplnění je stále potřeba a zápis je povolený.
 
-```text
-cíl uživatele
-    ↓
-agentní smyčka
-    ↓
-registr povolených nástrojů
-    ├── skladová data
-    ├── firemní pravidla
-    ├── doménový výpočet
-    └── řízená zápisová akce
+```mermaid
+flowchart LR
+    U[Cíl uživatele] --> A[Agentní smyčka]
+    A --> R[Registr povolených nástrojů]
+    R --> I[Skladová data]
+    R --> P[Firemní pravidla]
+    R --> C[Doménový výpočet]
+    R -->|jen s oprávněním| D[Návrh objednávky]
+    I -. pozorování .-> A
+    P -. pozorování .-> A
+    C -. pozorování .-> A
+    D -. výsledek .-> A
 ```
 
 Model objednávku nikdy sám neodešle. Vytvoří pouze lokální návrh pro lidskou kontrolu. Aplikace stále řídí data, výpočty, validaci, oprávnění i provedení změn.
@@ -155,6 +159,8 @@ Testy nevolají API a nepotřebují platný klíč:
 docker compose run --rm test
 ```
 
+Stejné testy spouští GitHub Actions na PHP 8.0 a 8.3. Kontrolují mimo jiné whitelist nástrojů, validaci argumentů, zákaz zápisu bez oprávnění, maximální počet kol, chybné odpovědi API a přepočítání množství před zápisem.
+
 Soubor `.env` se nekopíruje do image. Compose z něj pouze předá kontejneru proměnné `OPENAI_API_KEY` a `OPENAI_MODEL` při spuštění.
 
 ## Spuštění bez Dockeru
@@ -238,6 +244,8 @@ php tests/run.php
 # nebo
 composer test
 ```
+
+Jde o rychlé testy bez síťového připojení. `FakeResponsesGateway` simuluje tool cally, chybné odpovědi i selhání transportu, takže CI nepotřebuje API klíč a nevytváří žádné náklady. Skutečný průchod přes OpenAI API zůstává ručním integračním ověřením pomocí příkazů v části „Spuštění v Dockeru“.
 
 ## Bezpečnost a produkční použití
 

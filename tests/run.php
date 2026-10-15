@@ -38,6 +38,22 @@ function assertSameValue(mixed $expected, mixed $actual, string $message): void
     }
 }
 
+function assertThrows(callable $callback, string $expectedMessage, string $message): void
+{
+    try {
+        $callback();
+    } catch (Throwable $exception) {
+        if (!str_contains($exception->getMessage(), $expectedMessage)) {
+            throw new RuntimeException(
+                $message . '\nExpected exception containing: ' . $expectedMessage . '\nActual: ' . $exception->getMessage(),
+            );
+        }
+        return;
+    }
+
+    throw new RuntimeException($message . '\nExpected an exception, but none was thrown.');
+}
+
 $root = dirname(__DIR__);
 $products = new InventoryRepository($root . '/data/inventory.json');
 $policies = new RestockPolicyRepository($root . '/data/restock-policies.json');
@@ -94,6 +110,76 @@ assertSameValue('Restock 17 units.', $result->answer, 'Agent should return final
 assertSameValue('calculate_restock', $result->trace[0]['tool'], 'Agent should execute the requested tool.');
 assertSameValue(17, $result->trace[0]['observation']['data']['recommended_quantity'], 'Agent should feed the tool result into the loop.');
 
+$unknownTool = $registry->execute('delete_inventory', []);
+assertSameValue(false, $unknownTool['ok'], 'Unknown tools must be rejected.');
+assertSameValue('Unknown tool: delete_inventory', $unknownTool['error'], 'Unknown tool errors should identify the rejected name.');
+
+$invalidArguments = $registry->execute('calculate_restock', [
+    'current_stock' => -1,
+    'average_daily_sales' => 3,
+    'lead_time_days' => 5,
+    'safety_stock' => 10,
+]);
+assertSameValue(false, $invalidArguments['ok'], 'Invalid tool arguments must become a structured error.');
+
+$loopingResponse = [
+    'output' => [[
+        'type' => 'function_call',
+        'call_id' => 'call_loop',
+        'name' => 'calculate_restock',
+        'arguments' => '{"current_stock":8,"average_daily_sales":3,"lead_time_days":5,"safety_stock":10}',
+    ]],
+];
+assertThrows(
+    static fn () => (new Agent(
+        new FakeResponsesGateway([$loopingResponse, $loopingResponse]),
+        $registry,
+        'fake-model',
+        2,
+    ))->run('Keep calculating forever.'),
+    'exceeded the maximum of 2 rounds',
+    'The agent must stop after its configured maximum number of rounds.',
+);
+
+assertThrows(
+    static fn () => (new Agent(
+        new FakeResponsesGateway([[
+            'output' => [[
+                'type' => 'function_call',
+                'call_id' => 'call_malformed',
+                'name' => 'calculate_restock',
+                'arguments' => '{not-json}',
+            ]],
+        ]]),
+        $registry,
+        'fake-model',
+    ))->run('Return a malformed function call.'),
+    'malformed function call',
+    'Malformed function-call arguments must be rejected.',
+);
+
+assertThrows(
+    static fn () => (new Agent(
+        new FakeResponsesGateway([['id' => 'response_without_output']]),
+        $registry,
+        'fake-model',
+    ))->run('Return an invalid API response.'),
+    'does not contain an output array',
+    'An API response without output must be rejected.',
+);
+
+$failingGateway = new class implements ResponsesGateway {
+    public function create(array $payload): array
+    {
+        throw new RuntimeException('OpenAI request failed: Operation timed out.');
+    }
+};
+assertThrows(
+    static fn () => (new Agent($failingGateway, $registry, 'fake-model'))->run('Trigger an API timeout.'),
+    'Operation timed out',
+    'Transport failures must be surfaced instead of being reported as successful agent output.',
+);
+
 $temporaryDirectory = sys_get_temp_dir() . '/llm-agent-demo-test-' . bin2hex(random_bytes(4));
 $draftTool = new CreatePurchaseDraftTool($products, $policies, $restockCalculator, $temporaryDirectory);
 $denied = new ToolRegistry([$draftTool], false);
@@ -108,15 +194,18 @@ $allowed = new ToolRegistry([$draftTool], true);
 $createdResult = $allowed->execute('create_purchase_draft', [
     'sku' => 'USB-HUB-01',
     'reason' => 'Stock is below the calculated target.',
+    'quantity' => 999,
 ]);
 assertSameValue(true, $createdResult['ok'], 'Purchase draft should be created with write permission.');
 assertSameValue('draft', $createdResult['data']['status'], 'Created purchase document must remain a draft.');
-assertSameValue(17, $createdResult['data']['quantity'], 'Purchase draft quantity must be calculated by the application.');
+assertSameValue(17, $createdResult['data']['quantity'], 'Purchase draft quantity must be recalculated by the application, not accepted from model arguments.');
 $createdPath = $createdResult['data']['path'];
 assertSameValue(true, is_string($createdPath) && is_file($createdPath), 'Purchase draft file should exist.');
 if (is_string($createdPath)) {
     $createdContents = file_get_contents($createdPath);
     assertSameValue(true, is_string($createdContents) && str_ends_with($createdContents, PHP_EOL), 'Purchase draft JSON should end with a newline.');
+    $createdPayload = json_decode((string) $createdContents, true, 512, JSON_THROW_ON_ERROR);
+    assertSameValue(17, $createdPayload['quantity'], 'Persisted quantity must use the verified application calculation.');
 }
 
 if (is_string($createdPath)) {
